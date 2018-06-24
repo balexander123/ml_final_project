@@ -1,0 +1,149 @@
+---
+title: "Coursera Practical Machine Learning Course Project"
+author: "Barry Alexander"
+date: "6/17/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+We will be using the training data to create 2 separate data sets.  A larger portion (60%) will be used to train the model, and the remainder will be use to validate the model's accruacy.
+
+The final model selected will then be used to predict the dumbell exercise classifications in the test data set.
+
+## Packages
+
+```{r packages}
+if (!require(caret)) install.packages('caret')
+library(caret)
+```
+
+## Data Sources
+
+[The training data for this project are available here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+[The test data are available here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+```{r data load}
+
+# read and filter mising data
+pml_train <- read.csv('pml-training.csv', na.strings=c("NA","#DIV/0!",""))
+pml_test <- read.csv('pml-testing.csv', na.strings=c("NA","#DIV/0!",""))
+
+dim(pml_train)
+dim(pml_test)
+
+```
+
+## Data Cleansing
+
+Remove all NA columns and unnecessary columns
+
+```{r, cleans}
+# trim unnecessary columns
+
+pml_train_clean1 <- pml_train[,8:length(colnames(pml_train))]
+pml_test_clean1 <- pml_test[,8:length(colnames(pml_test))]
+
+# remove NA columns
+
+pml_train_clean1 <- pml_train_clean1[, colSums(is.na(pml_train_clean1)) == 0]
+pml_test_clean1 <- pml_test_clean1[, colSums(is.na(pml_test_clean1)) == 0]
+
+# set a high threshold for data and remove any over threshold
+treshold <- dim(pml_train_clean1)[1] * 0.95
+
+predictorCandidates <- !apply(pml_train_clean1, 2, function(x) sum(is.na(x)) > treshold  || sum(x=="") > treshold)
+
+pml_train_clean2 <- pml_train_clean1[, predictorCandidates]
+pml_test_clean2 <- pml_test_clean1[, predictorCandidates]
+
+# remove near zero values
+removeColumns <- nearZeroVar(pml_train_clean2, saveMetrics = TRUE)
+
+pml_train_final <- pml_train_clean2[, removeColumns$nzv==FALSE]
+pml_train_final$classe = factor(pml_train_final$classe)
+
+removeColumns <- nearZeroVar(pml_test_clean2, saveMetrics = TRUE)
+
+pml_test_final <- pml_test_clean2[, removeColumns$nzv==FALSE]
+```
+
+## Partition Data
+
+We partition the training data into a training set used to train the model, and a validation set to test the model on a new data set.
+
+```{R, partition}
+
+inTrain <- createDataPartition(pml_train_final$classe, p=0.6)[[1]]
+training <- pml_train_final[inTrain,]
+validation <- pml_train_final[-inTrain,]
+
+summary(pml_train_final)
+```
+
+## Model Building
+
+We will compare three type of models: random forest, linear discriminate analysis, and recursive partitioning from the caret package.
+
+```{R, seed}
+set.seed(7654)
+```
+### Cross Validation
+
+For all of our models, we will use K-fold cross validation using 5 partitions.
+
+```{R, cv}
+control <- trainControl(method = "cv", 5)
+```
+
+### Training using Linear Discriminate Analysis
+
+Using linear discriminate analysis, we achieve out of sample error rate of about 30% percent (1 - accruacy).
+
+```{R, training.lda}
+model.lda <- train(classe ~ ., data=training, method="lda", trControl = control)
+
+prediction.lda <- predict(model.lda, validation)
+confusionMatrix(prediction.lda, validation$classe)
+```
+
+### Training using Recursive Partitioning
+
+Using recursive patitioning method of train function, we only achieve 55% accruacy.  Propbably need to preprocess the predictors to achieve better results. We'll try try random forest next though before doing anything further with this partitioning model 
+
+```{R, training.rp}
+model.rp <- train(classe ~ ., data=training, method="rpart2", trControl = control)
+
+prediction.rp <- predict(model.rp, validation)
+confusionMatrix(prediction.rp, validation$classe)
+```
+
+### Training using Random Forest
+
+Random forest proved to have the best accruacy and very small out of sample error rate of only 1% (1 - accruacy).
+
+```{R, training.rf}
+
+model.rf <- train(classe ~ ., data=training, method="rf", trControl = control, ntree = 150)
+
+prediction.rf <- predict(model.rf, validation)
+confusionMatrix(prediction.rf, validation$classe)
+```
+
+## Quiz Results
+
+Use the random forest model to predict the quiz answers:
+
+```{R, quiz}
+#predictquiz <- predict(model.rf, pml_test_final)
+#predictquiz
+```
